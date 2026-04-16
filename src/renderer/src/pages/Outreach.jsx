@@ -1,360 +1,88 @@
 import { useState, useMemo } from 'react'
-import { useOutreach, useContacts } from '../hooks/useOrbit'
-import { emitDataChange } from '../hooks/useOrbit'
-import { formatDate, daysSince, channelLabel, channelBadgeClass } from '../utils.jsx'
+import { useThreads, useContacts, emitDataChange } from '../hooks/useOrbit'
+import { daysSince, formatDateShort, intentLabel, intentBadgeClass, eventTypeLabel, channelLabel } from '../utils.jsx'
+import NewThreadModal from '../components/NewThreadModal'
+import ThreadDetailModal from '../components/ThreadDetailModal'
+import AddEventModal from '../components/AddEventModal'
+import EditEventModal from '../components/EditEventModal'
 import './Outreach.css'
 
-function outreachStatusBadge(status) {
-  if (!status) return null
-  const map = {
-    sent:      { label: 'Awaiting reply', cls: 'badge-yellow' },
-    connected: { label: 'Connected',      cls: 'badge-green'  },
-    declined:  { label: 'Declined',       cls: 'badge-red'    },
-  }
-  const { label, cls } = map[status] || { label: status, cls: 'badge-purple' }
-  return <span className={`badge ${cls}`}>{label}</span>
-}
-
-function avatarClass(status) {
-  if (status === 'connected') return ' avatar-connected'
-  if (status === 'sent') return ' avatar-pending'
-  if (status === 'declined') return ' avatar-declined'
-  return ''
-}
-
-function ConnectModal({ outreach, onConfirm, onCancel }) {
-  const [form, setForm] = useState({
-    meeting_datetime: '',
-    meeting_duration: '30 min',
-    meeting_location: '',
-    meeting_topic: ''
-  })
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">
-          Mark as Connected — {outreach.first_name} {outreach.last_name}
-        </div>
-        <div className="form-field">
-          <label>Meeting Date & Time *</label>
-          <input type="datetime-local" value={form.meeting_datetime} onChange={set('meeting_datetime')} required />
-        </div>
-        <div className="form-row">
-          <div className="form-field">
-            <label>Duration</label>
-            <select value={form.meeting_duration} onChange={set('meeting_duration')}>
-              <option value="15 min">15 min</option>
-              <option value="30 min">30 min</option>
-              <option value="45 min">45 min</option>
-              <option value="60 min">60 min</option>
-              <option value="90 min">90 min</option>
-            </select>
-          </div>
-          <div className="form-field">
-            <label>Location / Link</label>
-            <input value={form.meeting_location} onChange={set('meeting_location')} placeholder="Zoom, coffee shop…" />
-          </div>
-        </div>
-        <div className="form-field">
-          <label>Topic</label>
-          <input value={form.meeting_topic} onChange={set('meeting_topic')} placeholder="What will you discuss?" />
-        </div>
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button
-            className="btn-primary"
-            disabled={!form.meeting_datetime}
-            onClick={() => onConfirm(form)}
-          >
-            Confirm Meeting
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function AddOutreachModal({ contacts, onSave, onCancel }) {
-  const [form, setForm] = useState({
-    contact_id: '',
-    channel: 'linkedin',
-    sent_date: new Date().toISOString().split('T')[0],
-    notes: ''
-  })
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">Log Outreach</div>
-        <div className="form-field">
-          <label>Contact *</label>
-          <select value={form.contact_id} onChange={set('contact_id')} required>
-            <option value="">Select contact…</option>
-            {contacts?.map(c => (
-              <option key={c.id} value={c.id}>{c.first_name} {c.last_name} {c.company ? `— ${c.company}` : ''}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form-row">
-          <div className="form-field">
-            <label>Channel</label>
-            <select value={form.channel} onChange={set('channel')}>
-              <option value="linkedin">LinkedIn</option>
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="in_person">In Person</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="form-field">
-            <label>Date Sent</label>
-            <input type="date" value={form.sent_date} onChange={set('sent_date')} />
-          </div>
-        </div>
-        <div className="form-field">
-          <label>Notes</label>
-          <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What did you say?" />
-        </div>
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button
-            className="btn-primary"
-            disabled={!form.contact_id}
-            onClick={() => onSave({ ...form, contact_id: parseInt(form.contact_id), status: 'sent' })}
-          >
-            Log Outreach
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EditOutreachModal({ item, onSave, onCancel }) {
-  const [form, setForm] = useState({
-    channel: item.channel,
-    sent_date: item.sent_date?.split('T')[0] || '',
-    status: item.status || 'sent',
-    notes: item.notes || '',
-    meeting_datetime: item.meeting_datetime || '',
-    meeting_duration: item.meeting_duration || '30 min',
-    meeting_location: item.meeting_location || '',
-    meeting_topic: item.meeting_topic || ''
-  })
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">Edit Outreach — {item.first_name} {item.last_name}</div>
-        <div className="form-field">
-          <label>Status</label>
-          <div className="status-picker">
-            {[
-              { value: 'sent', label: 'Awaiting Reply', cls: 'status-opt-yellow' },
-              { value: 'connected', label: 'Connected', cls: 'status-opt-green' },
-              { value: 'declined', label: 'Declined', cls: 'status-opt-red' }
-            ].map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`status-opt ${opt.cls}${form.status === opt.value ? ' active' : ''}`}
-                onClick={() => setForm(f => ({ ...f, status: opt.value }))}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-field">
-            <label>Channel</label>
-            <select value={form.channel} onChange={set('channel')}>
-              <option value="linkedin">LinkedIn</option>
-              <option value="email">Email</option>
-              <option value="phone">Phone</option>
-              <option value="in_person">In Person</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="form-field">
-            <label>Date Sent</label>
-            <input type="date" value={form.sent_date} onChange={set('sent_date')} />
-          </div>
-        </div>
-        <div className="form-field">
-          <label>Notes</label>
-          <textarea rows={3} value={form.notes} onChange={set('notes')} />
-        </div>
-        {form.status === 'connected' && (
-          <>
-            <div className="form-field">
-              <label>Meeting Date & Time</label>
-              <input type="datetime-local" value={form.meeting_datetime} onChange={set('meeting_datetime')} />
-            </div>
-            <div className="form-row">
-              <div className="form-field">
-                <label>Duration</label>
-                <select value={form.meeting_duration} onChange={set('meeting_duration')}>
-                  <option value="15 min">15 min</option>
-                  <option value="30 min">30 min</option>
-                  <option value="45 min">45 min</option>
-                  <option value="60 min">60 min</option>
-                  <option value="90 min">90 min</option>
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Location / Link</label>
-                <input value={form.meeting_location} onChange={set('meeting_location')} />
-              </div>
-            </div>
-            <div className="form-field">
-              <label>Topic</label>
-              <input value={form.meeting_topic} onChange={set('meeting_topic')} />
-            </div>
-          </>
-        )}
-        <div className="modal-actions">
-          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn-primary" onClick={() => onSave(item.id, form)}>Save Changes</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function OutreachCard({ item, onConnect, onDecline, onEdit, onDelete }) {
-  const days = daysSince(item.sent_date)
-  const isUrgent = days > 14
-
-  return (
-    <div className={`outreach-card${isUrgent ? ' urgent' : ''}`}>
-      <div className="outreach-card-header">
-        <div className={`outreach-avatar${avatarClass(item.status)}`}>{item.first_name[0]}{item.last_name[0]}</div>
-        <div className="outreach-card-info">
-          <div className="outreach-contact-name">{item.first_name} {item.last_name}</div>
-          <div className="outreach-company">{item.company || '—'}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {outreachStatusBadge(item.status)}
-          <span className={`badge ${channelBadgeClass(item.channel)}`}>{channelLabel(item.channel)}</span>
-        </div>
-      </div>
-      <div className="outreach-meta">
-        <span className="outreach-date">{formatDate(item.sent_date)}</span>
-        <span className={`outreach-days${isUrgent ? ' urgent' : ''}`}>{days}d ago</span>
-      </div>
-      {item.notes && <p className="outreach-notes">{item.notes}</p>}
-      <div className="outreach-card-actions">
-        {onConnect && (
-          <button className="btn-primary" style={{ flex: 1 }} onClick={() => onConnect(item)}>
-            Mark Connected
-          </button>
-        )}
-        {onConnect && (
-          <button className="btn-ghost" onClick={() => onDecline(item.id)}>
-            Decline
-          </button>
-        )}
-        <button className="btn-secondary" style={{ fontSize: 12, padding: '6px 10px' }} onClick={() => onEdit(item)}>
-          Edit
-        </button>
-        <button className="btn-ghost" style={{ fontSize: 12, padding: '6px 10px' }} onClick={() => onDelete(item.id)}>
-          ✕
-        </button>
-      </div>
-      {item.status === 'connected' && item.meeting_datetime && (
-        <div className="outreach-meeting">
-          <span className="meeting-icon">📅</span>
-          <div>
-            <div className="meeting-time">{formatDate(item.meeting_datetime)}</div>
-            {item.meeting_topic && <div className="meeting-topic">{item.meeting_topic}</div>}
-            {item.meeting_location && <div className="meeting-location">{item.meeting_location}</div>}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Outreach() {
-  const { data: outreach, loading, reload } = useOutreach()
+  const { data: threads, loading, reload } = useThreads()
   const { data: contacts } = useContacts()
-  const [connectTarget, setConnectTarget] = useState(null)
-  const [editTarget, setEditTarget] = useState(null)
-  const [showAdd, setShowAdd] = useState(false)
 
-  const pending = useMemo(() => outreach?.filter(o => o.status === 'sent') || [], [outreach])
-  const connected = useMemo(() => outreach?.filter(o => o.status === 'connected') || [], [outreach])
-  const declined = useMemo(() => outreach?.filter(o => o.status === 'declined') || [], [outreach])
+  const [search,         setSearch]         = useState('')
+  const [filterStatus,   setFilterStatus]   = useState('open')
+  const [filterIntent,   setFilterIntent]   = useState('')
+  const [filterCompany,  setFilterCompany]  = useState('')
+  const [showNew,        setShowNew]        = useState(false)
+  const [detailThread,   setDetailThread]   = useState(null)
+  const [addEventThread, setAddEventThread] = useState(null)
+  const [editEventTarget, setEditEventTarget] = useState(null) // { event, thread }
 
-  const handleConnect = async (meetingData) => {
-    await window.orbit.updateOutreachStatus(connectTarget.id, 'connected', meetingData)
+  const companies = useMemo(() => {
+    if (!threads) return []
+    return [...new Set(threads.map(t => t.company).filter(Boolean))].sort()
+  }, [threads])
 
-    // Auto-log meeting interaction
-    await window.orbit.addInteraction({
-      contact_id: connectTarget.contact_id,
-      type: 'meeting',
-      date: meetingData.meeting_datetime.split('T')[0],
-      notes: meetingData.meeting_topic || ''
-    })
-
-    // Try to create GCal event if connected
-    const settings = await window.orbit.getSettings()
-    if (settings.gcal_enabled === 'true') {
-      const contact = contacts?.find(c => c.id === connectTarget.contact_id)
-      if (contact) {
-        try {
-          const durationMin = parseInt(meetingData.meeting_duration) || 30
-          const start = new Date(meetingData.meeting_datetime)
-          const end = new Date(start.getTime() + durationMin * 60000)
-          await window.orbit.createCalendarEvent({
-            summary: `Meeting with ${contact.first_name} ${contact.last_name}${contact.company ? ` (${contact.company})` : ''}`,
-            description: meetingData.meeting_topic || '',
-            start: { dateTime: start.toISOString() },
-            end: { dateTime: end.toISOString() },
-            location: meetingData.meeting_location || ''
-          })
-        } catch (err) {
-          console.warn('GCal event creation failed:', err)
-        }
-      }
+  const filtered = useMemo(() => {
+    if (!threads) return []
+    let rows = [...threads]
+    if (filterStatus)  rows = rows.filter(t => t.status === filterStatus)
+    if (filterIntent)  rows = rows.filter(t => t.intent === filterIntent)
+    if (filterCompany) rows = rows.filter(t => t.company === filterCompany)
+    if (search) {
+      const q = search.toLowerCase()
+      rows = rows.filter(t =>
+        `${t.first_name} ${t.last_name} ${t.company || ''}`.toLowerCase().includes(q)
+      )
     }
+    rows.sort((a, b) => {
+      const aLast = a.events?.at(-1)?.date || a.created_at
+      const bLast = b.events?.at(-1)?.date || b.created_at
+      return bLast.localeCompare(aLast)
+    })
+    return rows
+  }, [threads, filterStatus, filterIntent, filterCompany, search])
 
-    setConnectTarget(null)
+  const openCount   = useMemo(() => threads?.filter(t => t.status === 'open').length   || 0, [threads])
+  const closedCount = useMemo(() => threads?.filter(t => t.status === 'closed').length || 0, [threads])
+  const activeFilters = [filterIntent, filterCompany, search].filter(Boolean).length
+
+  const handleUpdate = () => {
     reload()
-    emitDataChange('outreach-changed')
+    emitDataChange('threads-changed')
+    setDetailThread(null)
   }
 
-  const handleDecline = async (id) => {
-    if (!confirm('Mark this outreach as declined?')) return
-    await window.orbit.updateOutreachStatus(id, 'declined')
+  const handleNew = () => { setShowNew(false); reload(); emitDataChange('threads-changed') }
+
+  const handleAddEvent = async (data) => {
+    await window.orbit.addEvent(data)
+    setAddEventThread(null)
     reload()
-    emitDataChange('outreach-changed')
+    emitDataChange('threads-changed')
   }
 
-  const handleAdd = async (data) => {
-    await window.orbit.addOutreach(data)
-    setShowAdd(false)
+  const handleSaveEvent = async (id, data) => {
+    await window.orbit.updateEvent(id, data)
+    setEditEventTarget(null)
     reload()
-    emitDataChange('outreach-changed')
+    emitDataChange('threads-changed')
   }
 
-  const handleEdit = async (id, data) => {
-    await window.orbit.updateOutreach(id, data)
-    setEditTarget(null)
+  const handleDeleteEvent = async (id) => {
+    await window.orbit.deleteEvent(id)
+    setEditEventTarget(null)
     reload()
-    emitDataChange('outreach-changed')
+    emitDataChange('threads-changed')
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Delete this outreach entry?')) return
-    await window.orbit.deleteOutreach(id)
+  const handleDeleteThread = async (id) => {
+    if (!confirm('Delete this thread and all its events?')) return
+    await window.orbit.deleteThread(id)
     reload()
-    emitDataChange('outreach-changed')
+    emitDataChange('threads-changed')
   }
 
   return (
@@ -362,105 +90,179 @@ export default function Outreach() {
       <div className="page-header">
         <div>
           <div className="page-title">Outreach</div>
-          <div className="page-subtitle">{pending.length} pending · {connected.length} connected</div>
+          <div className="page-subtitle">{openCount} open · {closedCount} closed</div>
         </div>
-        <button className="btn-primary" onClick={() => setShowAdd(true)}>+ Log Outreach</button>
+        <button className="btn-primary" onClick={() => setShowNew(true)}>+ New Thread</button>
+      </div>
+
+      {/* Filters */}
+      <div className="outreach-filters">
+        <input
+          className="search-input"
+          placeholder="Search name or company…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <div className="status-tab-group">
+          {[['open', 'Open'], ['closed', 'Closed'], ['', 'All']].map(([val, label]) => (
+            <button
+              key={val}
+              className={`status-tab${filterStatus === val ? ' active' : ''}`}
+              onClick={() => setFilterStatus(val)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <select className="col-filter-select" value={filterIntent} onChange={e => setFilterIntent(e.target.value)}>
+          <option value="">All intents</option>
+          <option value="networking_call">Networking Call</option>
+          <option value="advice">Advice / Mentorship</option>
+          <option value="referral">Referral</option>
+          <option value="opportunity">Job Opportunity</option>
+          <option value="maintenance">Relationship Check-in</option>
+          <option value="other">Other</option>
+        </select>
+        {companies.length > 0 && (
+          <select className="col-filter-select" value={filterCompany} onChange={e => setFilterCompany(e.target.value)}>
+            <option value="">All companies</option>
+            {companies.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        {activeFilters > 0 && (
+          <button className="btn-ghost clear-filters" onClick={() => { setSearch(''); setFilterIntent(''); setFilterCompany('') }}>
+            Clear {activeFilters} ✕
+          </button>
+        )}
       </div>
 
       {loading ? (
         <div className="loading-text">Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">↗</div>
+          <div className="empty-state-title">
+            {threads?.length === 0 ? 'No threads yet' : 'No matches'}
+          </div>
+          <p>{threads?.length === 0
+            ? 'Start a thread to track an outreach campaign.'
+            : 'Try adjusting your search or filters.'}
+          </p>
+        </div>
       ) : (
-        <div className="outreach-columns">
-          <div className="outreach-column">
-            <div className="column-header">
-              <span className="column-title">Pending</span>
-              <span className="column-count">{pending.length}</span>
-            </div>
-            {pending.length === 0 ? (
-              <div className="empty-state" style={{ padding: '40px 20px' }}>
-                <div className="empty-state-icon">↗</div>
-                <div className="empty-state-title">No pending outreach</div>
-              </div>
-            ) : (
-              pending.map(item => (
-                <OutreachCard
-                  key={item.id}
-                  item={item}
-                  onConnect={setConnectTarget}
-                  onDecline={handleDecline}
-                  onEdit={setEditTarget}
-                  onDelete={handleDelete}
-                />
-              ))
-            )}
-          </div>
-
-          <div className="outreach-column">
-            <div className="column-header">
-              <span className="column-title">Connected</span>
-              <span className="column-count badge-green" style={{ background: 'var(--green-dim)', color: 'var(--green)', padding: '1px 8px', borderRadius: 100, fontSize: 11 }}>
-                {connected.length}
-              </span>
-            </div>
-            {connected.length === 0 ? (
-              <div className="empty-state" style={{ padding: '40px 20px' }}>
-                <div className="empty-state-icon">✓</div>
-                <div className="empty-state-title">No meetings yet</div>
-              </div>
-            ) : (
-              connected.map(item => (
-                <OutreachCard key={item.id} item={item} onEdit={setEditTarget} onDelete={handleDelete} />
-              ))
-            )}
-          </div>
+        <div className="thread-card-list">
+          {filtered.map(thread => (
+            <ThreadCard
+              key={thread.id}
+              thread={thread}
+              onOpen={() => setDetailThread(thread)}
+              onAddEvent={() => setAddEventThread(thread)}
+              onEditEvent={(ev) => setEditEventTarget({ event: ev, thread })}
+              onDelete={() => handleDeleteThread(thread.id)}
+            />
+          ))}
         </div>
       )}
 
-      {declined.length > 0 && (
-        <div className="declined-section">
-          <div className="section-title" style={{ marginBottom: 12 }}>
-            Declined / No Response ({declined.length})
-          </div>
-          <div className="declined-list">
-            {declined.map(item => (
-              <div key={item.id} className="declined-item">
-                <span>{item.first_name} {item.last_name}</span>
-                <span className="text-muted">{item.company}</span>
-                <span className={`badge ${channelBadgeClass(item.channel)}`}>{channelLabel(item.channel)}</span>
-                <span className="text-muted">{formatDate(item.sent_date)}</span>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                  <button className="btn-secondary" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setEditTarget(item)}>Edit</button>
-                  <button className="btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => handleDelete(item.id)}>✕</button>
-                </div>
-              </div>
-            ))}
-          </div>
+      {showNew && (
+        <NewThreadModal contacts={contacts} onSave={handleNew} onCancel={() => setShowNew(false)} />
+      )}
+      {detailThread && (
+        <ThreadDetailModal
+          thread={detailThread}
+          onClose={() => setDetailThread(null)}
+          onUpdate={handleUpdate}
+          onAddEvent={(t) => { setDetailThread(null); setAddEventThread(t) }}
+        />
+      )}
+      {addEventThread && (
+        <AddEventModal thread={addEventThread} onSave={handleAddEvent} onCancel={() => setAddEventThread(null)} />
+      )}
+      {editEventTarget && (
+        <EditEventModal
+          event={editEventTarget.event}
+          thread={editEventTarget.thread}
+          onSave={handleSaveEvent}
+          onDelete={handleDeleteEvent}
+          onCancel={() => setEditEventTarget(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ThreadCard({ thread, onOpen, onAddEvent, onEditEvent, onDelete }) {
+  const events   = thread.events || []
+  const lastEvent = events.at(-1)
+  const age      = lastEvent ? daysSince(lastEvent.date) : null
+  const isUrgent = age !== null && age > 14 && thread.status === 'open'
+
+  return (
+    <div className={`ot-card${thread.status === 'closed' ? ' closed' : ''}${isUrgent ? ' urgent' : ''}`}>
+
+      {/* ── Header: avatar + contact + badges + actions ── */}
+      <div className="ot-card-header" onClick={onOpen}>
+        <div className={`ot-avatar avatar-${thread.status}`}>
+          {thread.first_name[0]}{thread.last_name[0]}
         </div>
+        <div className="ot-contact">
+          <div className="ot-name">{thread.first_name} {thread.last_name}</div>
+          {thread.company && <div className="ot-company">{thread.company}</div>}
+        </div>
+        <div className="ot-badges">
+          <span className={`badge ${intentBadgeClass(thread.intent)}`}>{intentLabel(thread.intent)}</span>
+          {thread.initiated_by === 'them' && <span className="thread-initiated-tag">← inbound</span>}
+          <span className={`badge ${thread.status === 'closed' ? 'badge-red' : 'badge-green'}`}>
+            {thread.status === 'closed' ? 'Closed' : 'Open'}
+          </span>
+        </div>
+        <div className="ot-header-actions" onClick={e => e.stopPropagation()}>
+          <button className="ot-add-btn" onClick={onAddEvent} title="Add event">+ Add</button>
+        </div>
+      </div>
+
+      {/* ── Context note ── */}
+      {thread.context && <p className="ot-context">{thread.context}</p>}
+
+      {/* ── Event rows ── */}
+      {events.length > 0 ? (
+        <div className="ot-events">
+          {events.map(e => {
+            const dotCls = e.type === 'meeting' ? 'dot-meeting'
+              : e.direction === 'inbound' ? 'dot-inbound' : 'dot-outbound'
+            return (
+              <button
+                key={e.id}
+                className="ot-event-row"
+                onClick={() => onEditEvent(e)}
+                type="button"
+              >
+                <div className={`event-dot ${dotCls}`} />
+                <span className="ot-event-type">{eventTypeLabel(e.type)}</span>
+                {e.channel && <span className="ot-event-channel"> · {channelLabel(e.channel)}</span>}
+                {e.direction === 'inbound'
+                  ? <span className="ot-event-dir inbound">← received</span>
+                  : <span className="ot-event-dir outbound">→ sent</span>
+                }
+                <span className="ot-event-date">{formatDateShort(e.date)}</span>
+                {e.notes && <span className="ot-event-notes">{e.notes}</span>}
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="ot-no-events">No events logged yet</div>
       )}
 
-      {connectTarget && (
-        <ConnectModal
-          outreach={connectTarget}
-          onConfirm={handleConnect}
-          onCancel={() => setConnectTarget(null)}
-        />
-      )}
-
-      {showAdd && (
-        <AddOutreachModal
-          contacts={contacts}
-          onSave={handleAdd}
-          onCancel={() => setShowAdd(false)}
-        />
-      )}
-
-      {editTarget && (
-        <EditOutreachModal
-          item={editTarget}
-          onSave={handleEdit}
-          onCancel={() => setEditTarget(null)}
-        />
-      )}
+      {/* ── Footer: age + delete ── */}
+      <div className="ot-footer">
+        <span className={`ot-age${isUrgent ? ' urgent' : ''}`}>
+          {age !== null ? `Last activity ${age}d ago` : 'No activity yet'}
+        </span>
+        <button className="ot-delete-btn" onClick={e => { e.stopPropagation(); onDelete() }} title="Delete thread">
+          Delete
+        </button>
+      </div>
     </div>
   )
 }

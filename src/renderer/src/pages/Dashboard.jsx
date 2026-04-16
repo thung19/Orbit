@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
 import { useData } from '../hooks/useOrbit'
-import { formatDateShort, daysSince } from '../utils.jsx'
+import { formatDateShort, eventTypeLabel, channelLabel } from '../utils.jsx'
 import './Dashboard.css'
 
 function MetricCard({ label, value, sub, accent }) {
@@ -14,43 +13,37 @@ function MetricCard({ label, value, sub, accent }) {
 }
 
 function ActivityHeatmap({ data }) {
-  // Build a 12-week grid
   const weeks = []
-  const now = new Date()
+  const now   = new Date()
   for (let w = 11; w >= 0; w--) {
-    const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - w * 7)
-    const year = weekStart.getFullYear()
-    const week = String(getWeekNumber(weekStart)).padStart(2, '0')
-    const key = `${year}-${week}`
-    const found = data?.find((d) => d.week === key)
+    const ws   = new Date(now)
+    ws.setDate(now.getDate() - w * 7)
+    const year = ws.getFullYear()
+    const week = String(getWeekNumber(ws)).padStart(2, '0')
+    const key  = `${year}-${week}`
+    const found = data?.find(d => d.week === key)
     weeks.push({ key, count: found?.count || 0 })
   }
-
-  const max = Math.max(1, ...weeks.map((w) => w.count))
-
+  const max = Math.max(1, ...weeks.map(w => w.count))
   return (
     <div className="heatmap-section">
       <div className="section-title">12-Week Activity</div>
       <div className="heatmap-grid">
-        {weeks.map((week) => {
-          const intensity = week.count / max
-          return (
-            <div
-              key={week.key}
-              className="heatmap-cell"
-              title={`${week.key}: ${week.count} interactions`}
-              style={{ opacity: week.count === 0 ? 0.15 : 0.2 + intensity * 0.8 }}
-            />
-          )
-        })}
+        {weeks.map(week => (
+          <div
+            key={week.key}
+            className="heatmap-cell"
+            title={`${week.key}: ${week.count} events`}
+            style={{ opacity: week.count === 0 ? 0.15 : 0.2 + (week.count / max) * 0.8 }}
+          />
+        ))}
       </div>
     </div>
   )
 }
 
 function getWeekNumber(d) {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const date   = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const dayNum = date.getUTCDay() || 7
   date.setUTCDate(date.getUTCDate() + 4 - dayNum)
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
@@ -59,17 +52,14 @@ function getWeekNumber(d) {
 
 function ActivityItem({ item }) {
   const name = `${item.first_name} ${item.last_name}`
-  const isOutreach = item.event_type === 'outreach'
+  const typeStr = eventTypeLabel(item.type).toLowerCase()
+  const chanStr = item.channel ? ` via ${channelLabel(item.channel)}` : ''
   return (
     <div className="activity-item">
-      <div className={`activity-dot ${isOutreach ? 'outreach' : 'interaction'}`} />
+      <div className={`activity-dot ${item.type === 'meeting' ? 'meeting' : item.direction === 'inbound' ? 'inbound' : 'outreach'}`} />
       <div className="activity-body">
         <span className="activity-name">{name}</span>
-        <span className="activity-text">
-          {isOutreach
-            ? ` — outreach via ${item.channel}`
-            : ` — ${item.channel}`}
-        </span>
+        <span className="activity-text"> — {typeStr}{chanStr}</span>
       </div>
       <span className="activity-date">{formatDateShort(item.date)}</span>
     </div>
@@ -77,23 +67,13 @@ function ActivityItem({ item }) {
 }
 
 export default function Dashboard() {
-  const { data: metrics, loading: mLoading } = useData(() => window.orbit.getDashboardMetrics())
+  const { data: metrics,  loading: mLoading } = useData(() => window.orbit.getDashboardMetrics())
   const { data: activity, loading: aLoading } = useData(() => window.orbit.getRecentActivity(10))
-  const { data: heatmap } = useData(() => window.orbit.getActivityHeatmap())
-  const { data: contacts } = useData(() => window.orbit.getContacts())
-  const { data: settings } = useData(() => window.orbit.getSettings())
+  const { data: heatmap }                     = useData(() => window.orbit.getActivityHeatmap())
 
-  const connectRate = metrics && metrics.outreachSent > 0
-    ? Math.round((metrics.connected / metrics.outreachSent) * 100)
+  const closeRate = metrics && metrics.threadsStarted > 0
+    ? Math.round((metrics.converted / metrics.threadsStarted) * 100)
     : 0
-
-  // Build overdue list from contacts data
-  const overdueContacts = contacts && settings
-    ? contacts.filter((c) => {
-        // simplified: just show contacts with no recent interaction
-        return false // will be computed server-side via metrics.overdueCount
-      })
-    : []
 
   return (
     <div className="page">
@@ -105,11 +85,11 @@ export default function Dashboard() {
       </div>
 
       <div className="metrics-grid">
-        <MetricCard label="Total Contacts" value={mLoading ? '…' : metrics?.totalConnections} />
+        <MetricCard label="Total Contacts"      value={mLoading ? '…' : metrics?.totalConnections} />
         <MetricCard
-          label="Outreach Sent"
-          value={mLoading ? '…' : metrics?.outreachSent}
-          sub={`${connectRate}% connect rate`}
+          label="Threads Started"
+          value={mLoading ? '…' : metrics?.threadsStarted}
+          sub={`${closeRate}% closed`}
         />
         <MetricCard label="Meetings This Month" value={mLoading ? '…' : metrics?.meetingsThisMonth} accent />
         <MetricCard
@@ -127,14 +107,14 @@ export default function Dashboard() {
           ) : activity?.length > 0 ? (
             <div className="activity-list">
               {activity.map((item, i) => (
-                <ActivityItem key={`${item.event_type}-${item.id}-${i}`} item={item} />
+                <ActivityItem key={`${item.id}-${i}`} item={item} />
               ))}
             </div>
           ) : (
             <div className="empty-state">
               <div className="empty-state-icon">↗</div>
               <div className="empty-state-title">No activity yet</div>
-              <p>Add contacts and log outreach to see activity here.</p>
+              <p>Add contacts and start threads to see activity here.</p>
             </div>
           )}
         </div>

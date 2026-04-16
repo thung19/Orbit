@@ -45,10 +45,10 @@ function SliderSetting({ label, description, value, min, max, step = 1, onChange
 export default function Settings() {
   const { data: settings, reload } = useSettings()
   const [local, setLocal] = useState({})
-  const [gcalStatus, setGcalStatus] = useState('')
-  const [gmailStatus, setGmailStatus] = useState('')
+  const [googleStatus, setGoogleStatus] = useState('')
   const [exportStatus, setExportStatus] = useState('')
   const [importStatus, setImportStatus] = useState('')
+  const [scanStatus, setScanStatus] = useState('')
 
   useEffect(() => {
     if (settings) setLocal(settings)
@@ -60,30 +60,36 @@ export default function Settings() {
     await window.orbit.updateSetting(key, strVal)
   }
 
-  const handleConnectGCal = async () => {
-    setGcalStatus('Opening browser…')
+  const handleConnectGoogle = async () => {
+    setGoogleStatus('Opening browser…')
     try {
-      const result = await window.orbit.connectGCal()
+      const result = await window.orbit.connectGoogle()
       if (result.success) {
-        setGcalStatus('Connected!')
+        setGoogleStatus('Connected!')
         reload()
       }
     } catch (err) {
-      setGcalStatus(`Error: ${err.message}`)
+      setGoogleStatus(`Error: ${err.message}`)
     }
   }
 
+  const handleDisconnectGoogle = async () => {
+    await window.orbit.disconnectGoogle()
+    setGoogleStatus('Disconnected')
+    reload()
+  }
+
   const handleScanGmail = async () => {
-    setGmailStatus('Scanning…')
+    setScanStatus('Scanning…')
     try {
       const result = await window.orbit.scanGmail()
       if (result.error) {
-        setGmailStatus(result.error)
+        setScanStatus(result.error)
       } else {
-        setGmailStatus(result.message)
+        setScanStatus(result.message)
       }
     } catch (err) {
-      setGmailStatus(`Error: ${err.message}`)
+      setScanStatus(`Error: ${err.message}`)
     }
   }
 
@@ -189,69 +195,42 @@ export default function Settings() {
         </section>
 
         <section className="settings-section">
-          <div className="settings-section-title">Strength Scoring</div>
-          <SliderSetting
-            label="Meeting weight"
-            description="Points per logged meeting"
-            value={parseInt(local.strength_weight_meeting || '3')}
-            min={1} max={5}
-            onChange={(v) => save('strength_weight_meeting', v)}
-          />
-          <SliderSetting
-            label="Email reply weight"
-            value={parseInt(local.strength_weight_email_reply || '1')}
-            min={1} max={3}
-            onChange={(v) => save('strength_weight_email_reply', v)}
-          />
-          <SliderSetting
-            label="LinkedIn reply weight"
-            value={parseInt(local.strength_weight_linkedin_reply || '1')}
-            min={1} max={3}
-            onChange={(v) => save('strength_weight_linkedin_reply', v)}
-          />
-          <ToggleSetting
-            label="Relationship decay"
-            description="Reduce strength score for contacts you haven't interacted with recently"
-            value={local.strength_decay_enabled === 'true'}
-            onChange={(v) => save('strength_decay_enabled', v ? 'true' : 'false')}
-          />
-          {local.strength_decay_enabled === 'true' && (
-            <SliderSetting
-              label="Decay period (days)"
-              description="Strength fully decays after this many × 10 days"
-              value={parseInt(local.strength_decay_days || '30')}
-              min={10} max={90} step={10}
-              onChange={(v) => save('strength_decay_days', v)}
-            />
-          )}
-        </section>
+          <div className="settings-section-title">Google Account</div>
 
-        <section className="settings-section">
-          <div className="settings-section-title">Google Calendar</div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Google Calendar</div>
-              <div className="setting-desc">
-                {local.gcal_enabled === 'true' ? '✓ Connected' : 'Not connected — click to authorize'}
+          {local.google_connected === 'true' ? (
+            <>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <div className="setting-label">Signed in with Google</div>
+                  <div className="setting-desc">Calendar sync and Gmail scanning are enabled</div>
+                  {googleStatus && <div className="status-msg">{googleStatus}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-secondary" onClick={handleConnectGoogle}>Reconnect</button>
+                  <button className="btn-secondary" onClick={handleDisconnectGoogle}>Sign Out</button>
+                </div>
               </div>
-              {gcalStatus && <div className="status-msg">{gcalStatus}</div>}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <div className="setting-label">Scan Gmail for outreach</div>
+                  <div className="setting-desc">Matches sent emails to your contacts and imports outreach records</div>
+                  {scanStatus && <div className="status-msg">{scanStatus}</div>}
+                </div>
+                <button className="btn-secondary" onClick={handleScanGmail}>Scan Now</button>
+              </div>
+            </>
+          ) : (
+            <div className="setting-row">
+              <div className="setting-info">
+                <div className="setting-label">Sign in with Google</div>
+                <div className="setting-desc">Connect your Google account to sync Calendar events and scan Gmail for outreach</div>
+                {googleStatus && <div className="status-msg">{googleStatus}</div>}
+              </div>
+              <button className="btn-primary" onClick={handleConnectGoogle}>
+                Sign in with Google
+              </button>
             </div>
-            <button className="btn-secondary" onClick={handleConnectGCal}>
-              {local.gcal_enabled === 'true' ? 'Reconnect' : 'Connect'}
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="settings-section-title">Gmail Scanning</div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Scan Gmail for outreach</div>
-              <div className="setting-desc">Matches sent emails to your contacts and imports outreach records</div>
-              {gmailStatus && <div className="status-msg">{gmailStatus}</div>}
-            </div>
-            <button className="btn-secondary" onClick={handleScanGmail}>Scan Now</button>
-          </div>
+          )}
         </section>
 
         <section className="settings-section">

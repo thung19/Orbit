@@ -13,9 +13,9 @@ export function emitDataChange(event) {
 
 // Generic data fetcher hook
 export function useData(fetcher, deps = []) {
-  const [data, setData] = useState(null)
+  const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -37,15 +37,14 @@ export function useData(fetcher, deps = []) {
 
 export function useContacts() {
   const result = useData(() => window.orbit.getContacts())
-  // Re-fetch contacts when outreach changes (status affects avatar color)
-  useEffect(() => {
-    return onDataChange('outreach-changed', result.reload)
-  }, [result.reload])
+  useEffect(() => onDataChange('threads-changed', result.reload), [result.reload])
   return result
 }
 
-export function useOutreach() {
-  return useData(() => window.orbit.getOutreach())
+export function useThreads() {
+  const result = useData(() => window.orbit.getThreads())
+  useEffect(() => onDataChange('threads-changed', result.reload), [result.reload])
+  return result
 }
 
 export function useSettings() {
